@@ -18,6 +18,9 @@ import models as mdl
 import auth as sl_auth
 import watchlist as sl_wl
 import alerts as sl_alerts
+import wishlist as sl_wish
+import watchlist_service as wl_svc
+from utils.cookies import get_cookie_manager
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS & GMAIL ALERT
@@ -110,30 +113,48 @@ def pct_color(v):
     return C["teal"] if v >= 0 else C["red"]
 
 # ══════════════════════════════════════════════════════════════════════════════
+# FIREBASE + SESSION RESTORE + OAUTH CALLBACK
+# ══════════════════════════════════════════════════════════════════════════════
+sl_auth.initialize_firebase_auth()
+# 0. Handle topbar dropdown logout (?action=logout link).
+if st.query_params.get("action") == "logout":
+    st.query_params.clear()
+    sl_auth.logout(None)   # clears session + reruns; cookie cleared on next cookie_manager init
+# 1. Process OAuth ?code= BEFORE CookieManager init (cookie_manager=None is safe).
+#    CookieManager.init causes a page reload (new WebSocket = new session_state).
+#    If code exchange runs after that reload, the code gets retried → invalid_grant
+#    (error disappears instantly because st.query_params.clear() triggers another
+#    rerun, so user sees "not logged in, no errors").
+sl_auth.handle_oauth_callback(None)
+# 2. Init CookieManager AFTER code exchange (may trigger its own internal rerun).
+_cookie_manager = get_cookie_manager()
+# 3. Restore returning-user session from cookie.
+sl_auth.restore_session_from_cookie(_cookie_manager)
+# 4. Write cookie now that manager is ready (skipped if already saved this session).
+sl_auth.maybe_save_cookie(_cookie_manager)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # TOPBAR
 # ══════════════════════════════════════════════════════════════════════════════
-_topbar_user = sl_auth.get_current_user()
-_user_badge  = ""
-if _topbar_user:
-    _pic  = _topbar_user.get("picture", "")
-    _nm   = _topbar_user.get("name", "User").split()[0]
-    _avatar = f'<img src="{_pic}" class="user-avatar">' if _pic else "❤️"
-    _user_badge = f'{_avatar}<span style="font-family:\'IBM Plex Mono\',monospace;font-size:0.78rem;color:var(--teal);">{_nm}</span>'
-
-now  = datetime.now().strftime("%H:%M:%S  %d %b %Y")
-_sep = f'<span style="color:{C["border"]}">|</span>' if _topbar_user else ""
-_topbar_html = f"""
+now           = datetime.now().strftime("%H:%M:%S  %d %b %Y")
+_auth_badge   = sl_auth.render_auth_button(C)
+_sep          = f'<span style="color:{C["border"]}">|</span>'
+_topbar_html  = f"""
 <div class="topbar">
   <div class="logo">stock<em>lens</em> <span style="font-size:0.55rem;color:{C['text_dim']};font-family:'IBM Plex Mono'">PRO</span></div>
+  <nav class="topbar-nav">
+    <a href="/about" target="_top" class="topbar-nav-btn" style="text-decoration:none;">About</a>
+  </nav>
   <div class="topbar-right">
-    {_user_badge}
+    {_auth_badge}
     {_sep}
     <div class="live-dot"></div>
     <span>LIVE DATA</span>
     <span style="color:{C['border']}">|</span>
     <span>{now}</span>
   </div>
-</div>"""
+</div>
+"""
 st.html(_topbar_html)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -149,8 +170,8 @@ with c1:
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    # ── 1. GOOGLE SIGN IN ──────────────────────────────────────────────────────────
-    sl_current_user = sl_auth.render_auth_panel(C)
+    # ── 1. GOOGLE SIGN IN ─────────────────────────────────────────────────────────
+    sl_current_user = sl_auth.render_auth_panel(C, _cookie_manager)
     st.sidebar.markdown("---")
 
     # ── 2. WATCHLIST PANEL (only when signed in) ───────────────────────────
@@ -197,12 +218,15 @@ with st.sidebar:
     if sl_current_user and _wl_card_data and enable_gmail:
         if st.sidebar.button("🔔 Alert My Watchlist Now",
                              use_container_width=True, key="wl_alert_btn"):
-            _uname = sl_current_user.get("name", "Investor")
+            _uname = sl_current_user.get("display_name",
+                        sl_current_user.get("name", "Investor"))
+            _uid   = st.session_state.get("uid", "")
             _ok, _msg = sl_alerts.send_watchlist_alert(
-                sender, app_pwd, receiver, _uname, _wl_card_data)
+                sender, app_pwd, receiver, _uname, _wl_card_data, uid=_uid)
             if _ok:
                 st.sidebar.markdown(
-                    f'<div class="alert-sent">✅ {_msg}</div>')
+                    f'<div class="alert-sent">✅ {_msg}</div>',
+                    unsafe_allow_html=True)
             else:
                 st.sidebar.error(_msg)
     elif sl_current_user and not _wl_card_data:
@@ -288,8 +312,8 @@ with head_col1:
     clr   = C["teal"] if chg >= 0 else C["red"]
 
     # ── Heart / Watchlist button ───────────────────────────────────────────
-    _wl_user = sl_auth.get_current_user()
-    _in_wl   = _wl_user and sl_wl.is_in_watchlist(_wl_user["email"], ticker)
+    _wl_uid  = st.session_state.get("uid", "")
+    _in_wl   = bool(_wl_uid) and sl_wl.is_in_watchlist(_wl_uid, ticker)
     _heart   = "❤️" if _in_wl else "🤍"
     _heart_tip = "Remove from Watchlist" if _in_wl else "Add to Watchlist"
 
@@ -306,17 +330,29 @@ with head_col1:
           <span style="color:{C['text_dim']};font-size:0.72rem;">as of {hist.index[-1].strftime('%d %b %Y')}</span>
         </div>""")
     with _hcol2:
-        if _wl_user:
+        if _wl_uid:
             if st.button(_heart, key="wl_heart_btn", help=_heart_tip):
                 if _in_wl:
-                    sl_wl.remove_from_watchlist(_wl_user["email"], ticker)
+                    sl_wl.remove_from_watchlist(_wl_uid, ticker)
                 else:
-                    sl_wl.add_to_watchlist(_wl_user["email"], ticker)
+                    sl_wl.add_to_watchlist(_wl_uid, ticker)
                 st.rerun()
+
+            # ── Wishlist / Price Alert button ──────────────────────────────
+            _in_wish   = wl_svc.is_in_wishlist(_wl_uid, ticker)
+            _wish_lbl  = "⭐" if _in_wish else "☆"
+            _wish_tip  = "Manage Price Alert" if _in_wish else "Add to Wishlist (Price Alert)"
+            if st.button(_wish_lbl, key="wish_star_btn", help=_wish_tip):
+                st.session_state["open_wish_modal"] = ticker
         else:
             st.html(
                 f'<span title="Sign in to add to watchlist" '
                 f'style="font-size:1.4rem;opacity:0.3;cursor:not-allowed;">🤍</span>')
+
+    # ── Wishlist modal (renders as dialog overlay) ─────────────────────────
+    if st.session_state.get("open_wish_modal") == ticker and _wl_uid:
+        sl_wish.render_add_to_wishlist_modal(_wl_uid, ticker, company, curr, c_sym, C)
+        st.session_state.pop("open_wish_modal", None)
 
 with head_col2:
     st.html(f"""
@@ -448,6 +484,7 @@ tabs = st.tabs([
     "📋 Fundamentals",
     "🎯 Backtesting",
     "📰 News & Sentiment",
+    "⭐ Wishlist & Alerts",
 ])
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -1265,6 +1302,19 @@ with tabs[7]:
                                     (sn3,"Neutral Articles",neut,C["yellow"])]:
             with col:
                 st.html(f"""<div class="metric-card" style="text-align:center"><div class="m-label">{lbl}</div><div style="font-size:2rem;font-weight:700;color:{clr}">{cnt}</div></div>""")
+
+# ╔══════════════════════════════════════════════════════════════════════════════
+# TAB 9 · Wishlist & Price Alerts
+# ╚══════════════════════════════════════════════════════════════════════════════
+with tabs[8]:
+    if sl_current_user:
+        sl_wish.render_wishlist_dashboard(st.session_state.get("uid", ""), C)
+    else:
+        st.info("🔐 Sign in with Google to use the Wishlist & Price Alerts feature.")
+        st.markdown(
+            "Set target prices and stop-loss levels for any stock. "
+            "The StockLens Pro notification service will email you the moment a condition is met."
+        )
 
 # ═══════════════════
 st.html(f"""

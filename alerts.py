@@ -1,9 +1,53 @@
-# alerts.py  ── StockLens Pro · Smart Prediction Gmail Alerts
+# alerts.py ── StockLens Pro · Smart Prediction Gmail Alerts + Firestore log
 
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+from datetime import datetime, timezone
+
+from firebase_service import get_db
+from user_service import update_alerts_count
+
+try:
+    from firebase_admin import firestore as fb_firestore
+    _FS_AVAILABLE = True
+except ImportError:
+    _FS_AVAILABLE = False
+
+
+def _save_alert_to_firestore(uid: str, rows: list, success: bool):
+    """Log sent alert to Firestore alerts/{uid}."""
+    if not uid:
+        return
+    db = get_db()
+    if db is None:
+        return
+    try:
+        server_ts = fb_firestore.SERVER_TIMESTAMP if _FS_AVAILABLE else None
+        entry = {
+            "sent_at":  datetime.now(timezone.utc).isoformat(),
+            "success":  success,
+            "tickers":  [r.get("ticker") for r in rows],
+            "up_count": sum(1 for r in rows if r.get("direction") == "UP"),
+            "dn_count": sum(1 for r in rows if r.get("direction") == "DOWN"),
+        }
+        ref = db.collection("alerts").document(uid)
+        doc = ref.get()
+        if doc.exists:
+            existing = doc.to_dict().get("alerts", [])
+            # Keep last 50 alerts to avoid unbounded growth
+            existing.append(entry)
+            ref.update({"alerts": existing[-50:], "updated_at": server_ts})
+            update_alerts_count(uid, len(existing[-50:]))
+        else:
+            ref.set({
+                "alerts":     [entry],
+                "created_at": server_ts,
+                "updated_at": server_ts,
+            })
+            update_alerts_count(uid, 1)
+    except Exception:
+        pass
 
 
 # ── HTML Email Builder ────────────────────────────────────────────────────────
@@ -195,14 +239,14 @@ def send_watchlist_alert(
     app_password: str,
     receiver_email: str,
     user_name: str,
-    card_data: list[dict],
-) -> tuple[bool, str]:
+    card_data: list,
+    uid: str = "",
+) -> tuple:
     """
-    Send a single combined prediction alert email for all watchlist stocks.
+    Send a combined prediction alert email for all watchlist stocks.
+    Optionally pass uid to log the alert in Firestore alerts/{uid}.
 
-    card_data: list of dicts with keys:
-      ticker, direction, curr, pred, pct, sym
-
+    card_data: list of dicts — ticker, direction, curr, pred, pct, sym
     Returns (success: bool, message: str)
     """
     if not sender_email or not app_password or not receiver_email:
@@ -210,7 +254,6 @@ def send_watchlist_alert(
     if not card_data:
         return False, "Watchlist is empty — nothing to alert."
 
-    # Filter out stocks with unknown direction
     rows = [r for r in card_data if r.get("direction") in ("UP", "DOWN")]
     if not rows:
         return False, "Could not fetch predictions for any watchlist stock."
@@ -236,11 +279,15 @@ def send_watchlist_alert(
             server.login(sender_email, app_password)
             server.sendmail(sender_email, receiver_email, msg.as_string())
 
+        _save_alert_to_firestore(uid, rows, success=True)
+
         up   = sum(1 for r in rows if r["direction"] == "UP")
         down = sum(1 for r in rows if r["direction"] == "DOWN")
         return True, f"✅ Alert sent! {up} stocks ↑ UP · {down} stocks ↓ DROP"
 
     except smtplib.SMTPAuthenticationError:
+        _save_alert_to_firestore(uid, rows, success=False)
         return False, "❌ Gmail auth failed. Check your App Password."
     except Exception as e:
+        _save_alert_to_firestore(uid, rows, success=False)
         return False, f"❌ Failed to send: {e}"
