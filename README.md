@@ -4,6 +4,7 @@
 > 5 ML models, 12+ technical indicators, Monte Carlo simulation, and backtesting engine.
 
 ---
+<img width="1907" height="860" alt="Screenshot 2026-06-27 234427" src="https://github.com/user-attachments/assets/52ca8c2f-2557-4758-9134-b7fb7ad41380" /
 
 ## 🏗️ Project Structure
 
@@ -27,6 +28,7 @@ stocklens_pro/
 - **On-Balance Volume (OBV)** as 3rd sub-chart
 - Period statistics: High, Low, Return, Volatility, Max Drawdown, Avg Daily Return
 - **Up/Down day distribution** donut + daily return histogram
+ 
 
 ### 📡 Tab 2 · Technical Analysis
 | Indicator | Description |
@@ -52,6 +54,8 @@ stocklens_pro/
 | **Random Forest** | 200 trees, depth-8 |
 | **⭐ Ensemble** | Weighted by directional accuracy |
 
+<img width="1890" height="835" alt="Screenshot 2026-06-27 234554" src="https://github.com/user-attachments/assets/81f47f58-23e5-4e7a-aedf-4a0a71b10799" />
+
 - Feature engineering: 30 lag prices, 5 return windows, 4 rolling stats, RSI proxy, MACD proxy
 - **Confidence band** (90% CI using Brownian motion scaling)
 - **Model accuracy table**: MAE, RMSE, R², MAPE, Directional Accuracy
@@ -66,6 +70,8 @@ stocklens_pro/
   - Percentile bands: P5, P25, P50, P75, P95
   - Probability of gain/loss
 - VaR bar chart comparison
+- <img width="1867" height="790" alt="Screenshot 2026-06-27 235845" src="https://github.com/user-attachments/assets/54e39f0c-c8d8-4165-9fb4-9699b7f6132f" />
+
 
 ### 🔀 Tab 5 · Multi-Stock Comparison
 - Normalised return chart (Base = 100)
