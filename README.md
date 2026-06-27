@@ -4,8 +4,7 @@
 > 5 ML models, 12+ technical indicators, Monte Carlo simulation, and backtesting engine.
 
 ---
-<img width="1907" height="860" alt="Screenshot 2026-06-27 234427" src="https://github.com/user-attachments/assets/52ca8c2f-2557-4758-9134-b7fb7ad41380" /
-
+<img width="1907" height="860" alt="Screenshot 2026-06-27 234427" src="https://github.com/user-attachments/assets/52ca8c2f-2557-4758-9134-b7fb7ad41380" />
 ## 🏗️ Project Structure
 
 ```
