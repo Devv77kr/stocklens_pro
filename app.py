@@ -1233,30 +1233,38 @@ with tabs[7]:
     if not news_list:
         st.info("No recent news. Ensure `textblob` is installed: `pip install textblob`")
     else:
-        records = []
-        for item in news_list:
-            title   = item.get("title", "")
-            ts      = item.get("providerPublishTime", 0)
-            pub_url = item.get("link", "#")
-            date_s  = datetime.fromtimestamp(ts).strftime("%d %b %Y") if ts else ""
-            blob    = TextBlob(title)
-            score   = blob.sentiment.polarity
-            subj    = blob.sentiment.subjectivity
+       for r in records:
 
-            if   score >  0.05: badge_cls, lbl = "badge-bull", "Bullish"
-            elif score < -0.05: badge_cls, lbl = "badge-bear", "Bearish"
-            else:               badge_cls, lbl = "badge-neu",  "Neutral"
+    c1, c2 = st.columns([1,4])
 
-            records.append({"title": title, "date": date_s, "score": score, "subjectivity": subj, "badge_cls": badge_cls, "lbl": lbl, "url": pub_url})
+    with c1:
 
-            st.html(f"""
-            <div class="news-card">
-              <div><span class="badge {badge_cls}">{lbl}</span></div>
-              <div class="news-body">
-                <div class="news-title">{title}</div>
-                <div class="news-meta">{date_s}  ·  Polarity: {score:+.3f}  ·  Subjectivity: {subj:.2f}</div>
-              </div>
-            </div>""")
+        try:
+            img = r["image"]["resolutions"][0]["url"]
+            st.image(img, width=120)
+        except:
+            pass
+
+    with c2:
+
+        st.markdown(f"### {r['title']}")
+
+        st.caption(f"{r['source']} • {r['date']}")
+
+        st.write(r["summary"])
+
+        if r["lbl"]=="Bullish":
+            st.success("🟢 Bullish")
+
+        elif r["lbl"]=="Bearish":
+            st.error("🔴 Bearish")
+
+        else:
+            st.warning("🟡 Neutral")
+
+        st.link_button("Read Full Article", r["url"])
+
+        st.divider()
 
         sec("Overall Sentiment", "🎯")
         avg_score = np.mean([r["score"] for r in records])
