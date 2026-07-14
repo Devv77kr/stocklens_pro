@@ -30,5 +30,3 @@ watchlists/
 .vscode/
 *.swp
 .DS_Store
-.streamlit/secrets.toml
-.streamlit/secrets.toml

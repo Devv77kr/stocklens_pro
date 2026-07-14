@@ -1233,41 +1233,63 @@ with tabs[7]:
     if not news_list:
         st.info("No recent news. Ensure `textblob` is installed: `pip install textblob`")
     else:
-       for r in records:
+        records = []
+        for item in news_list:
+            c_item = item.get("content", item)
+            title = c_item.get("title") or ""
+            summary = c_item.get("summary") or c_item.get("description") or ""
+            source = (c_item.get("provider") or {}).get("displayName") or item.get("publisher") or "Unknown"
+            url = (c_item.get("canonicalUrl") or {}).get("url") or item.get("link") or ""
+            raw_date = c_item.get("pubDate") or c_item.get("displayTime")
+            if raw_date:
+                try:
+                    date_str = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00")).strftime("%d %b %Y %H:%M")
+                except Exception:
+                    date_str = str(raw_date)
+            elif item.get("providerPublishTime"):
+                date_str = datetime.fromtimestamp(item["providerPublishTime"]).strftime("%d %b %Y %H:%M")
+            else:
+                date_str = ""
+            if not title:
+                continue
+            blob = TextBlob(f"{title}. {summary}")
+            score = blob.sentiment.polarity
+            lbl = "Bullish" if score > 0.05 else ("Bearish" if score < -0.05 else "Neutral")
+            records.append({
+                "title": title, "summary": summary, "source": source, "url": url,
+                "date": date_str, "image": c_item.get("thumbnail") or item.get("thumbnail") or {},
+                "score": score, "subjectivity": blob.sentiment.subjectivity, "lbl": lbl,
+            })
 
-    c1, c2 = st.columns([1,4])
+        for r in records:
+            c1, c2 = st.columns([1, 4])
 
-    with c1:
+            with c1:
+                try:
+                    img = r["image"]["resolutions"][0]["url"]
+                    st.image(img, width=120)
+                except Exception:
+                    pass
 
-        try:
-            img = r["image"]["resolutions"][0]["url"]
-            st.image(img, width=120)
-        except:
-            pass
+            with c2:
+                st.markdown(f"### {r['title']}")
+                st.caption(f"{r['source']} • {r['date']}")
+                st.write(r["summary"])
 
-    with c2:
+                if r["lbl"] == "Bullish":
+                    st.success("🟢 Bullish")
+                elif r["lbl"] == "Bearish":
+                    st.error("🔴 Bearish")
+                else:
+                    st.warning("🟡 Neutral")
 
-        st.markdown(f"### {r['title']}")
+                if r["url"]:
+                    st.link_button("Read Full Article", r["url"])
 
-        st.caption(f"{r['source']} • {r['date']}")
-
-        st.write(r["summary"])
-
-        if r["lbl"]=="Bullish":
-            st.success("🟢 Bullish")
-
-        elif r["lbl"]=="Bearish":
-            st.error("🔴 Bearish")
-
-        else:
-            st.warning("🟡 Neutral")
-
-        st.link_button("Read Full Article", r["url"])
-
-        st.divider()
+            st.divider()
 
         sec("Overall Sentiment", "🎯")
-        avg_score = np.mean([r["score"] for r in records])
+        avg_score = np.mean([r["score"] for r in records]) if records else 0.0
         g1, g2 = st.columns([1, 2])
 
         with g1:
