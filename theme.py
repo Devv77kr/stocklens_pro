@@ -50,8 +50,9 @@ def get_theme(mode="dark"):
 
     html, body, [class*="css"] {{ font-family: 'IBM Plex Mono', monospace !important; background: var(--bg) !important; color: var(--text) !important; }}
     .stApp {{ background: radial-gradient(ellipse at 20% 10%, {COLORS['purple_dim']} 0%, transparent 50%), radial-gradient(ellipse at 80% 90%, {COLORS['teal_dim']} 0%, transparent 50%), var(--bg) !important; }}
-    .block-container {{ padding: 0 1.5rem 3rem 1.5rem !important; max-width: 100% !important; }}
-    #MainMenu, footer, header {{ visibility: hidden !important; }}
+    .block-container, .stMainBlockContainer {{ padding: 0 1.5rem 3rem 1.5rem !important; max-width: 100% !important; }}
+    #MainMenu, footer {{ visibility: hidden !important; }}
+    header {{ display: none !important; }}
 
     .topbar {{ background: {COLORS['bg2']}; border-bottom: 1px solid var(--border); padding: 0.75rem 2rem; margin: 0 -1.5rem 2rem -1.5rem; display: flex; align-items: center; justify-content: space-between; backdrop-filter: blur(20px); position: sticky; top: 0; z-index: 999; }}
     .logo {{ font-family: 'Syne', sans-serif; font-size: 1.4rem; font-weight: 800; letter-spacing: -1px; color: var(--teal); }}
@@ -59,6 +60,10 @@ def get_theme(mode="dark"):
     .topbar-right {{ display:flex; gap:1rem; align-items:center; font-size:0.7rem; color:var(--dim); }}
     .live-dot {{ width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); animation: pulse 2s infinite; }}
     @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:0.4}} }}
+
+    .topbar-nav {{ display:flex; gap:0.5rem; align-items:center; }}
+    .topbar-nav-btn {{ background:transparent; border:1px solid var(--border); color:var(--dim); padding:4px 14px; border-radius:20px; font-size:0.68rem; font-family:'IBM Plex Mono',monospace; letter-spacing:0.08em; cursor:pointer; transition:all 0.2s; }}
+    .topbar-nav-btn:hover {{ border-color:var(--teal); color:var(--teal); }}
 
     .sec-title {{ font-family: 'Syne', sans-serif; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--teal); margin: 1.5rem 0 1rem 0; display: flex; align-items: center; gap: 0.6rem; }}
     .sec-title::after {{ content:''; flex:1; height:1px; background: linear-gradient(to right, {COLORS['teal_dim']}, transparent); }}
@@ -213,6 +218,330 @@ def get_theme(mode="dark"):
         color: #22c55e;
         margin-top: 8px;
         text-align: center;
+    }}
+    /* ── Profile Card ───────────────────────────────────────────────────── */
+    .profile-card {{
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 18px 14px 14px;
+        text-align: center;
+        margin-bottom: 12px;
+        position: relative;
+        overflow: hidden;
+    }}
+    .profile-card::before {{
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, {COLORS['teal']}, {COLORS['purple']});
+    }}
+    .profile-avatar-wrap {{
+        margin-bottom: 10px;
+    }}
+    .profile-avatar {{
+        width: 56px; height: 56px;
+        border-radius: 50%;
+        border: 2px solid {COLORS['teal']};
+        box-shadow: 0 0 16px rgba(0,255,224,0.25);
+        display: block;
+        margin: 0 auto;
+    }}
+    .profile-avatar-placeholder {{
+        width: 56px; height: 56px;
+        border-radius: 50%;
+        border: 2px solid {COLORS['teal']};
+        background: var(--bg2);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto;
+        font-size: 1.6rem;
+    }}
+    .profile-name {{
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 0.92rem;
+        color: var(--text);
+        margin-bottom: 3px;
+    }}
+    .profile-email {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.62rem;
+        color: var(--dim);
+        margin-bottom: 12px;
+        word-break: break-all;
+    }}
+    .profile-stats {{
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0;
+        border-top: 1px solid var(--grid);
+        padding-top: 10px;
+    }}
+    .profile-stat {{
+        flex: 1;
+        text-align: center;
+    }}
+    .profile-stat-div {{
+        width: 1px;
+        height: 28px;
+        background: var(--grid);
+    }}
+    .stat-val {{
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: {COLORS['teal']};
+        line-height: 1.1;
+    }}
+    .stat-lbl {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.58rem;
+        color: var(--dim);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-top: 2px;
+    }}
+    /* ── Google Sign-In topbar button ───────────────────────────────────── */
+    .google-signin-topbar {{
+        display: flex;
+        align-items: center;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 20px;
+        padding: 5px 14px;
+        cursor: pointer;
+        font-size: 0.72rem;
+        color: var(--text);
+        gap: 6px;
+        transition: all 0.2s ease;
+        text-decoration: none;
+    }}
+    .google-signin-topbar:hover {{
+        background: rgba(255,255,255,0.1);
+        border-color: {COLORS['teal']};
+        color: {COLORS['teal']};
+    }}
+    /* ── Topbar user dropdown ───────────────────────────────────────────── */
+    .topbar-user-menu {{
+        position: relative;
+        list-style: none;
+    }}
+    .topbar-user-trigger {{
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        cursor: pointer;
+        padding: 4px 10px;
+        border-radius: 20px;
+        border: 1px solid transparent;
+        transition: border-color 0.2s, background 0.2s;
+        user-select: none;
+        outline: none;
+    }}
+    .topbar-user-trigger::-webkit-details-marker {{ display: none; }}
+    .topbar-user-trigger::marker {{ display: none; }}
+    .topbar-user-menu[open] .topbar-user-trigger,
+    .topbar-user-trigger:hover {{
+        background: rgba(0,255,224,0.06);
+        border-color: rgba(0,255,224,0.25);
+    }}
+    .topbar-username {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.78rem;
+        font-weight: 500;
+    }}
+    .topbar-chevron {{
+        font-size: 0.6rem;
+        color: var(--dim);
+        transition: transform 0.2s;
+    }}
+    .topbar-user-menu[open] .topbar-chevron {{
+        transform: rotate(180deg);
+    }}
+    .topbar-dropdown {{
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        min-width: 220px;
+        background: {COLORS['bg2']};
+        border: 1px solid {COLORS['border']};
+        border-radius: 14px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+        padding: 12px;
+        z-index: 9999;
+        backdrop-filter: blur(20px);
+        animation: dropIn 0.15s ease;
+    }}
+    @keyframes dropIn {{
+        from {{ opacity:0; transform:translateY(-6px); }}
+        to   {{ opacity:1; transform:translateY(0); }}
+    }}
+    .dropdown-profile-row {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 2px 8px 2px;
+    }}
+    .dropdown-avatar {{
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        border: 2px solid {COLORS['teal']};
+        flex-shrink: 0;
+    }}
+    .dropdown-avatar-placeholder {{
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        background: var(--bg2);
+        border: 2px solid {COLORS['teal']};
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.2rem; flex-shrink: 0;
+    }}
+    .dropdown-profile-text {{
+        min-width: 0;
+    }}
+    .dropdown-name {{
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+    .dropdown-email {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.62rem;
+        color: var(--dim);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+    .dropdown-divider {{
+        height: 1px;
+        background: var(--grid);
+        margin: 8px 0;
+    }}
+    .dropdown-logout-link {{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-family: 'Syne', sans-serif;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: {COLORS['red']};
+        text-decoration: none;
+        transition: background 0.15s;
+    }}
+    .dropdown-logout-link:hover {{
+        background: {COLORS['red_dim']};
+    }}
+    /* ── Topbar user badge (legacy fallback) ────────────────────────────── */
+    .topbar-user {{
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }}
+    /* ── Sidebar Google Sign-In button ──────────────────────────────────── */
+    .google-signin-btn {{
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        background: white;
+        color: #3c4043;
+        border: 1px solid #dadce0;
+        border-radius: 24px;
+        padding: 10px 18px;
+        font-family: 'Syne', sans-serif;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        width: 100%;
+        margin: 4px 0;
+    }}
+    .google-signin-btn:hover {{
+        background: #f8f9fa;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }}
+
+    /* Responsive dashboard layout -------------------------------------------------
+       Streamlit columns are flex based, so give dense dashboard rows room to wrap
+       before they become too narrow to read or tap. */
+    @media (max-width: 900px) {{
+        .block-container, .stMainBlockContainer {{
+            padding: 0 1rem 2.25rem !important;
+        }}
+        .topbar {{
+            padding: 0.7rem 1rem;
+            margin: 0 -1rem 1.25rem;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }}
+        .topbar-right {{
+            margin-left: auto;
+        }}
+        .topbar-time, .topbar-separator {{
+            display: none;
+        }}
+        .stMainBlockContainer [data-testid="stHorizontalBlock"] {{
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }}
+        .stMainBlockContainer [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+            flex: 1 1 calc(50% - 0.75rem) !important;
+            min-width: min(100%, 15rem);
+        }}
+        .metric-card {{
+            padding: 0.9rem 1rem;
+        }}
+        .m-value {{
+            font-size: 1.35rem;
+        }}
+        .stTabs [data-baseweb="tab-list"] {{
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            scrollbar-width: thin;
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            flex: 0 0 auto;
+            padding: 8px 12px !important;
+        }}
+        [data-testid="stPlotlyChart"] {{
+            overflow-x: hidden;
+        }}
+    }}
+
+    @media (max-width: 640px) {{
+        .block-container, .stMainBlockContainer {{
+            padding: 0 0.75rem 2rem !important;
+        }}
+        .topbar {{
+            margin: 0 -0.75rem 1rem;
+            padding: 0.65rem 0.75rem;
+        }}
+        .logo {{ font-size: 1.2rem; }}
+        .topbar-nav-btn {{ padding: 5px 10px; }}
+        .topbar-right {{ font-size: 0.62rem; gap: 0.5rem; }}
+        .topbar-username {{ max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .google-signin-topbar {{ padding: 5px 9px; }}
+        .stMainBlockContainer [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+            flex-basis: 100% !important;
+            min-width: 0;
+        }}
+        .sec-title {{ margin: 1.15rem 0 0.75rem; font-size: 0.7rem; }}
+        .metric-card {{ border-radius: 10px; }}
+        .m-label {{ font-size: 0.6rem; }}
+        .m-value {{ font-size: 1.2rem; }}
+        .signal {{ padding: 5px 10px; }}
+        .stTabs [data-baseweb="tab"] {{ font-size: 0.7rem !important; }}
+        .stDataFrame {{ font-size: 0.72rem; }}
+        button, [data-testid="stButton"] button {{ min-height: 2.75rem; }}
     }}
     </style>
     """

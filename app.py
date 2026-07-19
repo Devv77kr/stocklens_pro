@@ -18,6 +18,9 @@ import models as mdl
 import auth as sl_auth
 import watchlist as sl_wl
 import alerts as sl_alerts
+import wishlist as sl_wish
+import watchlist_service as wl_svc
+from utils.cookies import get_cookie_manager
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS & GMAIL ALERT
@@ -106,51 +109,99 @@ def load_multi(tickers, period="1y"):
         except: pass
     return pd.DataFrame(out)
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_financial_statements(ticker):
+    """Annual statements change infrequently, so avoid repeated Yahoo requests."""
+    tk = yf.Ticker(ticker)
+    return tk.income_stmt, tk.balance_sheet
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_news(ticker, limit=20):
+    """Cache the network-bound news feed while keeping recent headlines fresh."""
+    try:
+        return yf.Ticker(ticker).news[:limit] or []
+    except Exception:
+        return []
+
+@st.cache_resource(ttl=600, max_entries=16, show_spinner=False)
+def train_sklearn_model(close_values, model_name):
+    """Keep fitted estimators in memory; they are expensive and not data objects."""
+    return mdl.train_sklearn(np.asarray(close_values, dtype=float), model_name)
+
+@st.cache_resource(ttl=600, max_entries=8, show_spinner=False)
+def train_lstm_model(close_values, look_back=60, epochs=25):
+    """Cache the fitted TensorFlow model and scaler for an unchanged price series."""
+    close_arr = np.asarray(close_values, dtype=float)
+    returns_arr = np.diff(close_arr) / close_arr[:-1]
+    scaler = __import__("sklearn.preprocessing", fromlist=["MinMaxScaler"]).MinMaxScaler()
+    scaled = scaler.fit_transform(returns_arr.reshape(-1, 1)).flatten()
+    model, X_te, y_te, y_pred, lb = mdl.train_lstm(scaled, look_back=look_back, epochs=epochs)
+    return model, X_te, y_te, y_pred, lb, scaler, scaled
+
 def pct_color(v):
     return C["teal"] if v >= 0 else C["red"]
 
 # ══════════════════════════════════════════════════════════════════════════════
+# FIREBASE + SESSION RESTORE + OAUTH CALLBACK
+# ══════════════════════════════════════════════════════════════════════════════
+sl_auth.initialize_firebase_auth()
+# 0. Handle topbar dropdown logout (?action=logout link).
+if st.query_params.get("action") == "logout":
+    st.query_params.clear()
+    sl_auth.logout(None)   # clears session + reruns; cookie cleared on next cookie_manager init
+# 1. Process OAuth ?code= BEFORE CookieManager init (cookie_manager=None is safe).
+#    CookieManager.init causes a page reload (new WebSocket = new session_state).
+#    If code exchange runs after that reload, the code gets retried → invalid_grant
+#    (error disappears instantly because st.query_params.clear() triggers another
+#    rerun, so user sees "not logged in, no errors").
+sl_auth.handle_oauth_callback(None)
+# 2. Init CookieManager AFTER code exchange (may trigger its own internal rerun).
+_cookie_manager = get_cookie_manager()
+# 3. Restore returning-user session from cookie.
+sl_auth.restore_session_from_cookie(_cookie_manager)
+# 4. Write cookie now that manager is ready (skipped if already saved this session).
+sl_auth.maybe_save_cookie(_cookie_manager)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # TOPBAR
 # ══════════════════════════════════════════════════════════════════════════════
-_topbar_user = sl_auth.get_current_user()
-_user_badge  = ""
-if _topbar_user:
-    _pic  = _topbar_user.get("picture", "")
-    _nm   = _topbar_user.get("name", "User").split()[0]
-    _avatar = f'<img src="{_pic}" class="user-avatar">' if _pic else "❤️"
-    _user_badge = f'{_avatar}<span style="font-family:\'IBM Plex Mono\',monospace;font-size:0.78rem;color:var(--teal);">{_nm}</span>'
-
-now  = datetime.now().strftime("%H:%M:%S  %d %b %Y")
-_sep = f'<span style="color:{C["border"]}">|</span>' if _topbar_user else ""
-_topbar_html = f"""
+now           = datetime.now().strftime("%H:%M:%S  %d %b %Y")
+_auth_badge   = sl_auth.render_auth_button(C)
+_sep          = f'<span style="color:{C["border"]}">|</span>'
+_topbar_html  = f"""
 <div class="topbar">
   <div class="logo">stock<em>lens</em> <span style="font-size:0.55rem;color:{C['text_dim']};font-family:'IBM Plex Mono'">PRO</span></div>
+  <nav class="topbar-nav">
+    <a href="/about" target="_top" class="topbar-nav-btn" style="text-decoration:none;">About</a>
+  </nav>
   <div class="topbar-right">
-    {_user_badge}
-    {_sep}
+    {_auth_badge}
+    <span class="topbar-separator">{_sep}</span>
     <div class="live-dot"></div>
     <span>LIVE DATA</span>
-    <span style="color:{C['border']}">|</span>
-    <span>{now}</span>
+    <span class="topbar-separator" style="color:{C['border']}">|</span>
+    <span class="topbar-time">{now}</span>
   </div>
-</div>"""
+</div>
+"""
 st.html(_topbar_html)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GLOBAL SEARCH BAR (MAIN SCREEN)
 # ══════════════════════════════════════════════════════════════════════════════
 st.html("<br>")
-c1, c2, c3 = st.columns([2, 1, 1])
-with c1:
-    ticker = st.text_input("🔍 Search any Stock Ticker", "RELIANCE.NS", 
-                           help="US: AAPL, TSLA | India: RELIANCE.NS, TCS.NS").upper().strip()
+ticker = st.text_input(
+    "🔍 Search any Stock Ticker",
+    "RELIANCE.NS",
+    help="US: AAPL, TSLA | India: RELIANCE.NS, TCS.NS",
+).upper().strip()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    # ── 1. GOOGLE SIGN IN ──────────────────────────────────────────────────────────
-    sl_current_user = sl_auth.render_auth_panel(C)
+    # ── 1. GOOGLE SIGN IN ─────────────────────────────────────────────────────────
+    sl_current_user = sl_auth.render_auth_panel(C, _cookie_manager)
     st.sidebar.markdown("---")
 
     # ── 2. WATCHLIST PANEL (only when signed in) ───────────────────────────
@@ -197,12 +248,15 @@ with st.sidebar:
     if sl_current_user and _wl_card_data and enable_gmail:
         if st.sidebar.button("🔔 Alert My Watchlist Now",
                              use_container_width=True, key="wl_alert_btn"):
-            _uname = sl_current_user.get("name", "Investor")
+            _uname = sl_current_user.get("display_name",
+                        sl_current_user.get("name", "Investor"))
+            _uid   = st.session_state.get("uid", "")
             _ok, _msg = sl_alerts.send_watchlist_alert(
-                sender, app_pwd, receiver, _uname, _wl_card_data)
+                sender, app_pwd, receiver, _uname, _wl_card_data, uid=_uid)
             if _ok:
                 st.sidebar.markdown(
-                    f'<div class="alert-sent">✅ {_msg}</div>')
+                    f'<div class="alert-sent">✅ {_msg}</div>',
+                    unsafe_allow_html=True)
             else:
                 st.sidebar.error(_msg)
     elif sl_current_user and not _wl_card_data:
@@ -288,8 +342,8 @@ with head_col1:
     clr   = C["teal"] if chg >= 0 else C["red"]
 
     # ── Heart / Watchlist button ───────────────────────────────────────────
-    _wl_user = sl_auth.get_current_user()
-    _in_wl   = _wl_user and sl_wl.is_in_watchlist(_wl_user["email"], ticker)
+    _wl_uid  = st.session_state.get("uid", "")
+    _in_wl   = bool(_wl_uid) and sl_wl.is_in_watchlist(_wl_uid, ticker)
     _heart   = "❤️" if _in_wl else "🤍"
     _heart_tip = "Remove from Watchlist" if _in_wl else "Add to Watchlist"
 
@@ -306,17 +360,29 @@ with head_col1:
           <span style="color:{C['text_dim']};font-size:0.72rem;">as of {hist.index[-1].strftime('%d %b %Y')}</span>
         </div>""")
     with _hcol2:
-        if _wl_user:
+        if _wl_uid:
             if st.button(_heart, key="wl_heart_btn", help=_heart_tip):
                 if _in_wl:
-                    sl_wl.remove_from_watchlist(_wl_user["email"], ticker)
+                    sl_wl.remove_from_watchlist(_wl_uid, ticker)
                 else:
-                    sl_wl.add_to_watchlist(_wl_user["email"], ticker)
+                    sl_wl.add_to_watchlist(_wl_uid, ticker)
                 st.rerun()
+
+            # ── Wishlist / Price Alert button ──────────────────────────────
+            _in_wish   = wl_svc.is_in_wishlist(_wl_uid, ticker)
+            _wish_lbl  = "⭐" if _in_wish else "☆"
+            _wish_tip  = "Manage Price Alert" if _in_wish else "Add to Wishlist (Price Alert)"
+            if st.button(_wish_lbl, key="wish_star_btn", help=_wish_tip):
+                st.session_state["open_wish_modal"] = ticker
         else:
             st.html(
                 f'<span title="Sign in to add to watchlist" '
                 f'style="font-size:1.4rem;opacity:0.3;cursor:not-allowed;">🤍</span>')
+
+    # ── Wishlist modal (renders as dialog overlay) ─────────────────────────
+    if st.session_state.get("open_wish_modal") == ticker and _wl_uid:
+        sl_wish.render_add_to_wishlist_modal(_wl_uid, ticker, company, curr, c_sym, C)
+        st.session_state.pop("open_wish_modal", None)
 
 with head_col2:
     st.html(f"""
@@ -448,6 +514,7 @@ tabs = st.tabs([
     "📋 Fundamentals",
     "🎯 Backtesting",
     "📰 News & Sentiment",
+    "⭐ Wishlist & Alerts",
 ])
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -677,28 +744,26 @@ with tabs[2]:
     )
 
     close_arr = close.values
+    close_cache_key = tuple(float(v) for v in close_arr)
     forecasts = {}
     metrics   = {}
     prog = st.progress(0, text="Training models…")
 
     for i, (name, key) in enumerate([("XGBoost","xgb"),("Gradient Boost","gbr"),("Random Forest","rf")]):
         prog.progress(int((i+1)/6*100), text=f"Training {name}…")
-        m, X_te, y_te, y_pred_te = mdl.train_sklearn(close_arr, key)
+        m, X_te, y_te, y_pred_te = train_sklearn_model(close_cache_key, key)
         forecasts[name] = mdl.forecast_sklearn(m, close_arr, horizon)
         metrics[name]   = mdl.evaluate(y_te, y_pred_te)
 
     prog.progress(75, text="Training Ridge baseline…")
-    m_r, X_te_r, y_te_r, y_pred_r = mdl.train_sklearn(close_arr, "ridge")
+    m_r, X_te_r, y_te_r, y_pred_r = train_sklearn_model(close_cache_key, "ridge")
     forecasts["Ridge"] = mdl.forecast_sklearn(m_r, close_arr, horizon)
     metrics["Ridge"]   = mdl.evaluate(y_te_r, y_pred_r)
 
     lstm_model = None
     if use_lstm:
         prog.progress(85, text="Training LSTM (this may take ~30s)…")
-        returns_arr = np.diff(close_arr) / close_arr[:-1]
-        scaler = __import__("sklearn.preprocessing", fromlist=["MinMaxScaler"]).MinMaxScaler()
-        scaled = scaler.fit_transform(returns_arr.reshape(-1,1)).flatten()
-        lstm_model, X_te_l, y_te_l, y_pred_l, lb = mdl.train_lstm(scaled, look_back=60, epochs=25)
+        lstm_model, X_te_l, y_te_l, y_pred_l, lb, scaler, scaled = train_lstm_model(close_cache_key)
         if lstm_model is not None:
             lstm_fc = mdl.forecast_lstm(lstm_model, scaled, scaler, horizon, lb, close_arr[-1])
             min_len = min(len(lstm_fc), min(len(v) for v in forecasts.values()))
@@ -1016,7 +1081,7 @@ with tabs[4]:
 # ╚══════════════════════════════════════════════════════════════════════════════
 with tabs[5]:
     sec("Fundamental Analysis", "📋")
-    tk_obj = yf.Ticker(ticker)
+    inc, bs = load_financial_statements(ticker)
 
     f1, f2 = st.columns([1, 1])
     with f1:
@@ -1072,7 +1137,6 @@ with tabs[5]:
         st.plotly_chart(radar_fig, use_container_width=True)
 
     try:
-        inc = tk_obj.income_stmt
         if inc is not None and not inc.empty:
             sec("Income Statement (Annual)", "📊")
             cols_plot = ["Total Revenue", "Gross Profit", "Operating Income", "Net Income"]
@@ -1091,7 +1155,6 @@ with tabs[5]:
     except: pass
 
     try:
-        bs = tk_obj.balance_sheet
         if bs is not None and not bs.empty:
             sec("Balance Sheet (Annual)", "🏦")
             bs_rows = ["Total Assets", "Total Liabilities Net Minority Interest",
@@ -1189,7 +1252,7 @@ with tabs[7]:
 
     try:
         from textblob import TextBlob
-        news_list = yf.Ticker(ticker).news[:20] or []
+        news_list = load_news(ticker)
     except Exception:
         news_list = []
 
@@ -1198,31 +1261,61 @@ with tabs[7]:
     else:
         records = []
         for item in news_list:
-            title   = item.get("title", "")
-            ts      = item.get("providerPublishTime", 0)
-            pub_url = item.get("link", "#")
-            date_s  = datetime.fromtimestamp(ts).strftime("%d %b %Y") if ts else ""
-            blob    = TextBlob(title)
-            score   = blob.sentiment.polarity
-            subj    = blob.sentiment.subjectivity
+            c_item = item.get("content", item)
+            title = c_item.get("title") or ""
+            summary = c_item.get("summary") or c_item.get("description") or ""
+            source = (c_item.get("provider") or {}).get("displayName") or item.get("publisher") or "Unknown"
+            url = (c_item.get("canonicalUrl") or {}).get("url") or item.get("link") or ""
+            raw_date = c_item.get("pubDate") or c_item.get("displayTime")
+            if raw_date:
+                try:
+                    date_str = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00")).strftime("%d %b %Y %H:%M")
+                except Exception:
+                    date_str = str(raw_date)
+            elif item.get("providerPublishTime"):
+                date_str = datetime.fromtimestamp(item["providerPublishTime"]).strftime("%d %b %Y %H:%M")
+            else:
+                date_str = ""
+            if not title:
+                continue
+            blob = TextBlob(f"{title}. {summary}")
+            score = blob.sentiment.polarity
+            lbl = "Bullish" if score > 0.05 else ("Bearish" if score < -0.05 else "Neutral")
+            records.append({
+                "title": title, "summary": summary, "source": source, "url": url,
+                "date": date_str, "image": c_item.get("thumbnail") or item.get("thumbnail") or {},
+                "score": score, "subjectivity": blob.sentiment.subjectivity, "lbl": lbl,
+            })
 
-            if   score >  0.05: badge_cls, lbl = "badge-bull", "Bullish"
-            elif score < -0.05: badge_cls, lbl = "badge-bear", "Bearish"
-            else:               badge_cls, lbl = "badge-neu",  "Neutral"
+        for r in records:
+            c1, c2 = st.columns([1, 4])
 
-            records.append({"title": title, "date": date_s, "score": score, "subjectivity": subj, "badge_cls": badge_cls, "lbl": lbl, "url": pub_url})
+            with c1:
+                try:
+                    img = r["image"]["resolutions"][0]["url"]
+                    st.image(img, width=120)
+                except Exception:
+                    pass
 
-            st.html(f"""
-            <div class="news-card">
-              <div><span class="badge {badge_cls}">{lbl}</span></div>
-              <div class="news-body">
-                <div class="news-title">{title}</div>
-                <div class="news-meta">{date_s}  ·  Polarity: {score:+.3f}  ·  Subjectivity: {subj:.2f}</div>
-              </div>
-            </div>""")
+            with c2:
+                st.markdown(f"### {r['title']}")
+                st.caption(f"{r['source']} • {r['date']}")
+                st.write(r["summary"])
+
+                if r["lbl"] == "Bullish":
+                    st.success("🟢 Bullish")
+                elif r["lbl"] == "Bearish":
+                    st.error("🔴 Bearish")
+                else:
+                    st.warning("🟡 Neutral")
+
+                if r["url"]:
+                    st.link_button("Read Full Article", r["url"])
+
+            st.divider()
 
         sec("Overall Sentiment", "🎯")
-        avg_score = np.mean([r["score"] for r in records])
+        avg_score = np.mean([r["score"] for r in records]) if records else 0.0
         g1, g2 = st.columns([1, 2])
 
         with g1:
@@ -1265,6 +1358,19 @@ with tabs[7]:
                                     (sn3,"Neutral Articles",neut,C["yellow"])]:
             with col:
                 st.html(f"""<div class="metric-card" style="text-align:center"><div class="m-label">{lbl}</div><div style="font-size:2rem;font-weight:700;color:{clr}">{cnt}</div></div>""")
+
+# ╔══════════════════════════════════════════════════════════════════════════════
+# TAB 9 · Wishlist & Price Alerts
+# ╚══════════════════════════════════════════════════════════════════════════════
+with tabs[8]:
+    if sl_current_user:
+        sl_wish.render_wishlist_dashboard(st.session_state.get("uid", ""), C)
+    else:
+        st.info("🔐 Sign in with Google to use the Wishlist & Price Alerts feature.")
+        st.markdown(
+            "Set target prices and stop-loss levels for any stock. "
+            "The StockLens Pro notification service will email you the moment a condition is met."
+        )
 
 # ═══════════════════
 st.html(f"""
