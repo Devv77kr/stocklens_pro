@@ -469,6 +469,80 @@ def get_theme(mode="dark"):
         background: #f8f9fa;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }}
+
+    /* Responsive dashboard layout -------------------------------------------------
+       Streamlit columns are flex based, so give dense dashboard rows room to wrap
+       before they become too narrow to read or tap. */
+    @media (max-width: 900px) {{
+        .block-container, .stMainBlockContainer {{
+            padding: 0 1rem 2.25rem !important;
+        }}
+        .topbar {{
+            padding: 0.7rem 1rem;
+            margin: 0 -1rem 1.25rem;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }}
+        .topbar-right {{
+            margin-left: auto;
+        }}
+        .topbar-time, .topbar-separator {{
+            display: none;
+        }}
+        .stMainBlockContainer [data-testid="stHorizontalBlock"] {{
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }}
+        .stMainBlockContainer [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+            flex: 1 1 calc(50% - 0.75rem) !important;
+            min-width: min(100%, 15rem);
+        }}
+        .metric-card {{
+            padding: 0.9rem 1rem;
+        }}
+        .m-value {{
+            font-size: 1.35rem;
+        }}
+        .stTabs [data-baseweb="tab-list"] {{
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            scrollbar-width: thin;
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            flex: 0 0 auto;
+            padding: 8px 12px !important;
+        }}
+        [data-testid="stPlotlyChart"] {{
+            overflow-x: hidden;
+        }}
+    }}
+
+    @media (max-width: 640px) {{
+        .block-container, .stMainBlockContainer {{
+            padding: 0 0.75rem 2rem !important;
+        }}
+        .topbar {{
+            margin: 0 -0.75rem 1rem;
+            padding: 0.65rem 0.75rem;
+        }}
+        .logo {{ font-size: 1.2rem; }}
+        .topbar-nav-btn {{ padding: 5px 10px; }}
+        .topbar-right {{ font-size: 0.62rem; gap: 0.5rem; }}
+        .topbar-username {{ max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .google-signin-topbar {{ padding: 5px 9px; }}
+        .stMainBlockContainer [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+            flex-basis: 100% !important;
+            min-width: 0;
+        }}
+        .sec-title {{ margin: 1.15rem 0 0.75rem; font-size: 0.7rem; }}
+        .metric-card {{ border-radius: 10px; }}
+        .m-label {{ font-size: 0.6rem; }}
+        .m-value {{ font-size: 1.2rem; }}
+        .signal {{ padding: 5px 10px; }}
+        .stTabs [data-baseweb="tab"] {{ font-size: 0.7rem !important; }}
+        .stDataFrame {{ font-size: 0.72rem; }}
+        button, [data-testid="stButton"] button {{ min-height: 2.75rem; }}
+    }}
     </style>
     """
     return COLORS, PLOTLY_BASE, CSS

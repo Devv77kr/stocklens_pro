@@ -109,6 +109,35 @@ def load_multi(tickers, period="1y"):
         except: pass
     return pd.DataFrame(out)
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_financial_statements(ticker):
+    """Annual statements change infrequently, so avoid repeated Yahoo requests."""
+    tk = yf.Ticker(ticker)
+    return tk.income_stmt, tk.balance_sheet
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_news(ticker, limit=20):
+    """Cache the network-bound news feed while keeping recent headlines fresh."""
+    try:
+        return yf.Ticker(ticker).news[:limit] or []
+    except Exception:
+        return []
+
+@st.cache_resource(ttl=600, max_entries=16, show_spinner=False)
+def train_sklearn_model(close_values, model_name):
+    """Keep fitted estimators in memory; they are expensive and not data objects."""
+    return mdl.train_sklearn(np.asarray(close_values, dtype=float), model_name)
+
+@st.cache_resource(ttl=600, max_entries=8, show_spinner=False)
+def train_lstm_model(close_values, look_back=60, epochs=25):
+    """Cache the fitted TensorFlow model and scaler for an unchanged price series."""
+    close_arr = np.asarray(close_values, dtype=float)
+    returns_arr = np.diff(close_arr) / close_arr[:-1]
+    scaler = __import__("sklearn.preprocessing", fromlist=["MinMaxScaler"]).MinMaxScaler()
+    scaled = scaler.fit_transform(returns_arr.reshape(-1, 1)).flatten()
+    model, X_te, y_te, y_pred, lb = mdl.train_lstm(scaled, look_back=look_back, epochs=epochs)
+    return model, X_te, y_te, y_pred, lb, scaler, scaled
+
 def pct_color(v):
     return C["teal"] if v >= 0 else C["red"]
 
@@ -147,11 +176,11 @@ _topbar_html  = f"""
   </nav>
   <div class="topbar-right">
     {_auth_badge}
-    {_sep}
+    <span class="topbar-separator">{_sep}</span>
     <div class="live-dot"></div>
     <span>LIVE DATA</span>
-    <span style="color:{C['border']}">|</span>
-    <span>{now}</span>
+    <span class="topbar-separator" style="color:{C['border']}">|</span>
+    <span class="topbar-time">{now}</span>
   </div>
 </div>
 """
@@ -161,10 +190,11 @@ st.html(_topbar_html)
 # GLOBAL SEARCH BAR (MAIN SCREEN)
 # ══════════════════════════════════════════════════════════════════════════════
 st.html("<br>")
-c1, c2, c3 = st.columns([2, 1, 1])
-with c1:
-    ticker = st.text_input("🔍 Search any Stock Ticker", "RELIANCE.NS", 
-                           help="US: AAPL, TSLA | India: RELIANCE.NS, TCS.NS").upper().strip()
+ticker = st.text_input(
+    "🔍 Search any Stock Ticker",
+    "RELIANCE.NS",
+    help="US: AAPL, TSLA | India: RELIANCE.NS, TCS.NS",
+).upper().strip()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR
@@ -714,28 +744,26 @@ with tabs[2]:
     )
 
     close_arr = close.values
+    close_cache_key = tuple(float(v) for v in close_arr)
     forecasts = {}
     metrics   = {}
     prog = st.progress(0, text="Training models…")
 
     for i, (name, key) in enumerate([("XGBoost","xgb"),("Gradient Boost","gbr"),("Random Forest","rf")]):
         prog.progress(int((i+1)/6*100), text=f"Training {name}…")
-        m, X_te, y_te, y_pred_te = mdl.train_sklearn(close_arr, key)
+        m, X_te, y_te, y_pred_te = train_sklearn_model(close_cache_key, key)
         forecasts[name] = mdl.forecast_sklearn(m, close_arr, horizon)
         metrics[name]   = mdl.evaluate(y_te, y_pred_te)
 
     prog.progress(75, text="Training Ridge baseline…")
-    m_r, X_te_r, y_te_r, y_pred_r = mdl.train_sklearn(close_arr, "ridge")
+    m_r, X_te_r, y_te_r, y_pred_r = train_sklearn_model(close_cache_key, "ridge")
     forecasts["Ridge"] = mdl.forecast_sklearn(m_r, close_arr, horizon)
     metrics["Ridge"]   = mdl.evaluate(y_te_r, y_pred_r)
 
     lstm_model = None
     if use_lstm:
         prog.progress(85, text="Training LSTM (this may take ~30s)…")
-        returns_arr = np.diff(close_arr) / close_arr[:-1]
-        scaler = __import__("sklearn.preprocessing", fromlist=["MinMaxScaler"]).MinMaxScaler()
-        scaled = scaler.fit_transform(returns_arr.reshape(-1,1)).flatten()
-        lstm_model, X_te_l, y_te_l, y_pred_l, lb = mdl.train_lstm(scaled, look_back=60, epochs=25)
+        lstm_model, X_te_l, y_te_l, y_pred_l, lb, scaler, scaled = train_lstm_model(close_cache_key)
         if lstm_model is not None:
             lstm_fc = mdl.forecast_lstm(lstm_model, scaled, scaler, horizon, lb, close_arr[-1])
             min_len = min(len(lstm_fc), min(len(v) for v in forecasts.values()))
@@ -1053,7 +1081,7 @@ with tabs[4]:
 # ╚══════════════════════════════════════════════════════════════════════════════
 with tabs[5]:
     sec("Fundamental Analysis", "📋")
-    tk_obj = yf.Ticker(ticker)
+    inc, bs = load_financial_statements(ticker)
 
     f1, f2 = st.columns([1, 1])
     with f1:
@@ -1109,7 +1137,6 @@ with tabs[5]:
         st.plotly_chart(radar_fig, use_container_width=True)
 
     try:
-        inc = tk_obj.income_stmt
         if inc is not None and not inc.empty:
             sec("Income Statement (Annual)", "📊")
             cols_plot = ["Total Revenue", "Gross Profit", "Operating Income", "Net Income"]
@@ -1128,7 +1155,6 @@ with tabs[5]:
     except: pass
 
     try:
-        bs = tk_obj.balance_sheet
         if bs is not None and not bs.empty:
             sec("Balance Sheet (Annual)", "🏦")
             bs_rows = ["Total Assets", "Total Liabilities Net Minority Interest",
@@ -1226,7 +1252,7 @@ with tabs[7]:
 
     try:
         from textblob import TextBlob
-        news_list = yf.Ticker(ticker).news[:20] or []
+        news_list = load_news(ticker)
     except Exception:
         news_list = []
 

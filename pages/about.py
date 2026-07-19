@@ -101,6 +101,14 @@ st.html(f"""
     padding-top: 1.5rem;
     border-top: 1px solid var(--grid);
   }}
+  @media (max-width: 640px) {{
+    .about-wrap {{ margin: 2rem auto; padding: 0 0.25rem; }}
+    .about-back {{ margin-bottom: 1.75rem; }}
+    .about-hero-logo {{ font-size: 2.2rem; }}
+    .about-tagline {{ font-size: 0.9rem; margin-bottom: 2rem; }}
+    .about-features {{ grid-template-columns: 1fr; gap: 0.65rem; }}
+    .about-section-body {{ font-size: 0.86rem; line-height: 1.7; }}
+  }}
 </style>
 
 <div class="about-wrap">

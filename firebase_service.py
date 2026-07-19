@@ -15,6 +15,20 @@ _db = None
 _firebase_ok = False
 
 
+@st.cache_resource(show_spinner=False)
+def _create_firestore_client():
+    """Create one Admin SDK client per Streamlit process."""
+    if not _FIREBASE_AVAILABLE:
+        return None
+    if not firebase_admin._apps:
+        sa_raw = st.secrets.get("firebase", {}).get("service_account_json", "")
+        if not sa_raw:
+            return None
+        sa_dict = json.loads(sa_raw) if isinstance(sa_raw, str) else dict(sa_raw)
+        firebase_admin.initialize_app(credentials.Certificate(sa_dict))
+    return firestore.client()
+
+
 def initialize_firebase() -> bool:
     """
     Initialize Firebase Admin SDK from secrets.toml service account JSON.
@@ -24,20 +38,10 @@ def initialize_firebase() -> bool:
     global _db, _firebase_ok
     if not _FIREBASE_AVAILABLE:
         return False
-    if firebase_admin._apps:
-        _db = firestore.client()
-        _firebase_ok = True
-        return True
     try:
-        sa_raw = st.secrets.get("firebase", {}).get("service_account_json", "")
-        if not sa_raw:
-            return False
-        sa_dict = json.loads(sa_raw) if isinstance(sa_raw, str) else dict(sa_raw)
-        cred = credentials.Certificate(sa_dict)
-        firebase_admin.initialize_app(cred)
-        _db = firestore.client()
-        _firebase_ok = True
-        return True
+        _db = _create_firestore_client()
+        _firebase_ok = _db is not None
+        return _firebase_ok
     except Exception as e:
         st.warning(f"Firebase init failed — running without Firestore. ({e})", icon="⚠️")
         return False

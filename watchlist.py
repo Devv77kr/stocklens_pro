@@ -69,6 +69,7 @@ def is_in_watchlist(uid: str, ticker: str) -> bool:
 
 # ── Quick direction prediction ────────────────────────────────────────────────
 
+@st.cache_data(ttl=300, show_spinner=False)
 def _quick_direction(ticker: str):
     """5-day EMA + RSI momentum signal. Returns (direction, curr, pred, sym)."""
     try:

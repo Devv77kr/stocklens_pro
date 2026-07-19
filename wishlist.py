@@ -8,6 +8,7 @@ import watchlist_service as wl_svc
 
 # ── currency helper ───────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=60, show_spinner=False)
 def _get_current_price(symbol: str) -> tuple[float, str]:
     """Fetch live price + currency symbol for a ticker."""
     try:
